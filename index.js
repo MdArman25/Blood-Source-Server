@@ -183,15 +183,15 @@ async function run() {
     });
     app.get("/donation_request/:email", verifyToken, async (req, res) => {
       // const user = req.body;
-      const email = req?.params?.email
-      console.log(email,"arman");
+      const email = req?.params?.email;
+      console.log(email, "arman");
       if (email === req?.user?.email) {
         const query = {
           requester_email: email,
         };
         const result = await DonationRequestCollection.find(query).toArray();
 
-        console.log(",",result);
+        console.log(",", result);
         res.send(result);
       }
     });
@@ -230,6 +230,24 @@ async function run() {
       }
       res.send({ isAdmin });
     });
+
+    app.get("/request", async (req, res) => {
+      const page = parseInt(req.query.page);
+      const size = parseInt(req.query.size);
+console.log('pages',page,size );
+      console.log("pagination query", page, size);
+      const result = await DonationRequestCollection.find()
+        .skip(page * size)
+        .limit(size)
+        .toArray();
+      res.send(result);
+    });
+
+    app.get('/requestCount', async (req, res) => {
+      const count = await DonationRequestCollection.estimatedDocumentCount();
+      res.send({ count });
+    })
+
     app.patch("/users/admin/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
