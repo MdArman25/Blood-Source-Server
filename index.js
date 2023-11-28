@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
 
@@ -81,22 +81,30 @@ async function run() {
         // return res.status(403).send({ message: "forbidden access" });
       }
     };
-    // const verifyVolunteer = async (req, res, next) => {
-    //   const email = req?.user?.email;
-    //   console.log("admin ", email);
-    //   const query = { email: email };
-    //   const user = await UserCollection.findOne(query);
-    //   console.log(user);
-    //   const isVolunteer = user?.role === "Volunteer";
-    //   console.log("Volunteer user ", isVolunteer);
-    //   if (isVolunteer) {
-    //     next();
-    //     // return
-    //     // return res.status(403).send({ message: "forbidden access" });
-    //   }
-    // };
 
-    app.get("/admin-status", verifyToken, async (req, res) => {
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      console.log("user token", user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "1h",
+      });
+
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+        })
+        .send({ success: true });
+    });
+
+    app.post("/logout", async (req, res) => {
+      const user = req.body;
+      console.log("logging out", user);
+      res.clearCookie("token", { maxAge: 0 }).send({ success: true });
+    });
+
+    app.get("/admin-status", verifyToken, verifyAdmin, async (req, res) => {
       const users = await UserCollection.estimatedDocumentCount();
       // const menusItems = await MenuCollection.estimatedDocumentCount();
       // const orders = await paymentsCollection.estimatedDocumentCount();
@@ -131,22 +139,6 @@ async function run() {
       });
     });
 
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-      console.log("jwt user", user);
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
-        expiresIn: "1h",
-      });
-      // console.log("this is token", token);
-      res
-        .cookie("token", token, {
-          httpOnly: true,
-          secure: true,
-          sameSite: "none",
-        })
-        .send({ success: true });
-    });
-
     app.post("/users", async (req, res) => {
       const User = req.body;
       console.log("auth user", User);
@@ -174,13 +166,14 @@ async function run() {
       res.clearCookie("token").send({ success: true });
     });
 
-    app.get("/Users", verifyToken, async (req, res) => {
+    app.get("/Users", verifyToken, verifyAdmin, async (req, res) => {
       console.log("cheack to token", req?.user?.email);
       // console.log(req.user);
       const result = await UserCollection.find().toArray();
       // console.log(result);
       res.send(result);
     });
+
     app.get("/donation_request/:email", verifyToken, async (req, res) => {
       // const user = req.body;
       const email = req?.params?.email;
@@ -209,6 +202,17 @@ async function run() {
         res.send(result);
       }
     );
+    app.get("/MyDonationUpdate/:id", async (req, res) => {
+      const id= req.params.id;
+      console.log ("id", id);
+      const query = {
+        _id: new ObjectId(id),
+      };
+      console.log(query);
+      const result = await DonationRequestCollection.findOne(query);
+      console.log(result);
+      res.send(result);
+    });
 
     app.get("/admin/:email", verifyToken, verifyAdmin, async (req, res) => {
       console.log("asoe hlit hocche", req?.user?.email);
@@ -226,15 +230,37 @@ async function run() {
       if (user?.role === "admin") {
         // isAdmin = user?.role=='admin'
         isAdmin = true;
-        console.log(isAdmin, "sadhdiowh");
+        console.log(isAdmin, "admin");
       }
       res.send({ isAdmin });
+    });
+
+    app.get("/volunteer/:email", verifyToken, async (req, res) => {
+      console.log("asoe hlit hocche", req?.user?.email);
+      const email = req.params.email;
+
+      console.log(req?.user, "emaillllllll", email);
+      if (email !== req?.user?.email) {
+        console.log("provlem");
+        return res.status(403).send({ message: "unauthorized Access" });
+      }
+      const query = { email: email };
+      const user = await UserCollection.findOne(query);
+      console.log("volunteer request user", user?.role);
+      let isVolunteer = false;
+      if (user?.role === "Volunteer") {
+        // isVolunteer = user?.role=='volunteer'
+        isVolunteer = true;
+        console.log(isVolunteer, "volunteer");
+      }
+      console.log("request last ");
+      res.send({ isVolunteer });
     });
 
     app.get("/request", async (req, res) => {
       const page = parseInt(req.query.page);
       const size = parseInt(req.query.size);
-console.log('pages',page,size );
+      console.log("pages", page, size);
       console.log("pagination query", page, size);
       const result = await DonationRequestCollection.find()
         .skip(page * size)
@@ -243,10 +269,10 @@ console.log('pages',page,size );
       res.send(result);
     });
 
-    app.get('/requestCount', async (req, res) => {
+    app.get("/requestCount", async (req, res) => {
       const count = await DonationRequestCollection.estimatedDocumentCount();
       res.send({ count });
-    })
+    });
 
     app.patch("/users/admin/:id", async (req, res) => {
       const id = req.params.id;
@@ -313,6 +339,39 @@ console.log('pages',page,size );
       console.log(result);
       res.send(result);
     });
+
+    app.put("/Blood_Request_update/:id",verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const updatedDonation = req.body;
+      console.log(updatedDonation);
+
+      const Donation = {
+        $set: {
+          recipient_name: updatedDonation.recipient_name,
+          address: updatedDonation.address,
+          service_image: updatedDonation.service_image,
+          donation_date: updatedDonation.donation_date,
+          donation_time: updatedDonation.donation_time,
+          hospital_name: updatedDonation.hospital_name,
+          Request_Message: updatedDonation.Request_Message,
+          Upazila: updatedDonation.Upazila,
+          donation_status: updatedDonation.donation_status,
+          requester_Name: updatedDonation.requester_Name,
+          requester_email: updatedDonation.requester_email,
+          requester_photo: updatedDonation.requester_photo,
+        },
+      };
+      const result = await DonationRequestCollection.updateOne(
+        filter,
+        Donation,
+        options
+      );
+      console.log(result);
+      res.send(result);
+    });
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
